@@ -1,0 +1,4 @@
+# Compilation Tree-sitter
+/tree-sitter-cpp/
+/build/
+*.so

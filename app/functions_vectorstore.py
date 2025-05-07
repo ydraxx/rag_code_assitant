@@ -15,7 +15,7 @@ from functions_embeddings import CustomEmbedding
 from functions_parsing import parse_cpp_code
 
 
-def extract_includes_from_ast(root_node, code: str) -> list[str]:
+def extract_includes_from_ast(root_node, code: str):
 
     includes = []
 

@@ -6,7 +6,7 @@ LIB_PATH = 'build/my-languages.so'
 if not os.path.exists(LIB_PATH):
     Language.build_library(
         LIB_PATH,
-        ['tree-sitter-cpp']
+        ['../tree-sitter-cpp']
     )
 
 CPP_LANGUAGE = Language(LIB_PATH, 'cpp')

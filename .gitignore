@@ -2,3 +2,5 @@
 /tree-sitter-cpp/
 /build/
 *.so
+
+*__pycache__

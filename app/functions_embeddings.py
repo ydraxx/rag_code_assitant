@@ -4,10 +4,6 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 
 class CustomEmbedding(Embeddings):
-    """
-    Classe personnalisée pour générer des embeddings à l'aide d'un modèle HuggingFace.
-    Compatible avec le pipeline FAISS / LangChain.
-    """
 
     def __init__(self, model_name: str = "intfloat/e5-large-v2", device: str = "cpu"):
         self.model_name = model_name

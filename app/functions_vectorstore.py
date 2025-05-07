@@ -165,3 +165,6 @@ def build_vectorstore(folder_path: str, index_path: str, json_file: str):
         print('New embeddings added and index saved.')
     else:
         print('No new documents to process.')
+
+
+build_vectorstore('../test_vectorstore/test_folder/', '../test_vectorestore/test.faiss', '../test_vectorestore/test.json')

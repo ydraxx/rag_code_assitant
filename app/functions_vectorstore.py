@@ -2,7 +2,6 @@ import chardet
 import faiss
 import hashlib
 import json
-from langchain_core.embeddings import Embeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.document_loaders import PyMuPDFLoader
@@ -12,7 +11,51 @@ import numpy as np
 import os
 from os import path
 
+from functions_embeddings import CustomEmbedding
 from functions_parsing import parse_cpp_code
+
+
+def extract_includes_from_ast(root_node, code: str) -> list[str]:
+
+    includes = []
+
+    def recurse(node):
+        if node.type == 'preproc_include':
+            include_text = code[node.start_byte:node.end_byte].strip()
+            includes.append(include_text)
+        for child in node.children:
+            recurse(child)
+
+    recurse(root_node)
+    return includes
+
+
+def extract_chunks_from_ast(root_node, code: str, file_path: str):
+    
+    chunks = []
+    includes = extract_includes_from_ast(root_node, code)
+
+    def recurse(node):
+
+        if node.type in ['function_definition', 'class_specifier', 'struct_specifier']:
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": node.type,
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "includes": includes,
+                    "ast": node.sexp()
+                }
+            ))
+        for child in node.children:
+            recurse(child)
+
+    recurse(root_node)
+    return includes, chunks
 
 
 def load_splits_doc(folder_path: str):
@@ -28,20 +71,13 @@ def load_splits_doc(folder_path: str):
             file_path = os.path.join(root, file)
             file_path = os.path.normpath(file_path)
 
-            docs = []
-            includes = []
-
             # Handle PDF documents
             if file_path.endswith('.pdf'):
                 loader = PyMuPDFLoader(file_path)
-                docs = loader.load()
+                doc = loader.load()
 
             # Handle C, C++ documents
-            elif (file_path.endswith('.cc') or
-                  file_path.endswith('.h') or
-                  file_path.endswith('.c') or
-                  file_path.endswith('.cpp') or
-                  file_path.endswith('.hpp')):
+            elif file_path.endswith(('.cc', '.h', '.c', '.cpp', '.hpp')):
                 with open(file_path, 'rb') as f:
                     raw_data = f.read()
                     result = chardet.detect(raw_data)
@@ -50,6 +86,9 @@ def load_splits_doc(folder_path: str):
                 with open(file_path, 'r', encoding=encoding) as f:
                     content = f.read()
                     ast = parse_cpp_code(content)
+                    includes, doc = extract_chunks_from_ast(ast, content, file_path)
+                    splits.extend(doc)
+    return splits
 
 
 def document_hash(document):
@@ -64,7 +103,7 @@ def load_existing_doc(json_file: str):
     Load existing hashes doc from json file
     """
     if os.path.exists(json_file):
-        with open(json_file):
+        with open(json_file, 'r') as f:
             return set(json.load(f))
     return set()
 
@@ -105,7 +144,7 @@ def build_vectorstore(folder_path: str, index_path: str, json_file: str):
         print('Vector store already exists.')
     
     else:
-        dim = len(new_embeddings[0]) if new_embeddings else 4096
+        dim = len(new_embeddings[0]) if new_embeddings else 1024
         index = faiss.IndexFlatIP(dim)
         vector_store = FAISS(index=index,
                              docstore=InMemoryDocstore({}),

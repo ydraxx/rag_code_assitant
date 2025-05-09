@@ -5,4 +5,4 @@ Language.build_library(
   ['tree-sitter-cpp']
 )
 
-CPP_LANGUAGE = Language('build/my-languages.so', 'cpp')
+CPP_LANGUAGE = Language('/build/my-languages.so', 'cpp')

@@ -1,7 +1,7 @@
 from tree_sitter import Language, Parser
 import os
 
-LIB_PATH = 'build/my-languages.so'
+LIB_PATH = '../build/my-languages.so'
 
 if not os.path.exists(LIB_PATH):
     Language.build_library(

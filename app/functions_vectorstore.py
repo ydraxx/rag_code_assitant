@@ -167,4 +167,4 @@ def build_vectorstore(folder_path: str, index_path: str, json_file: str):
         print('No new documents to process.')
 
 
-build_vectorstore('../test_vectorstore/test_folder/', '../test_vectorestore/test.faiss', '../test_vectorestore/test.json')
+build_vectorstore('../test_vectorstore/test_folder/', '../test_vectorstore/vectorstore', '../test_vectorstore/test.json')

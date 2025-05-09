@@ -140,7 +140,7 @@ def build_vectorstore(folder_path: str, index_path: str, json_file: str):
             print('Document already exists.')
 
     if os.path.exists(index_path):
-        vector_store = FAISS.load_local(index_path, embedding, allow=True)
+        vector_store = FAISS.load_local(index_path, embedding, allow_dangerous_deserialization=True)
         print('Vector store already exists.')
     
     else:

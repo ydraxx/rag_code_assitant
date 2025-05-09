@@ -1,0 +1,6 @@
+faiss-cpu
+langchain_community
+langchain_core
+langchain_huggingface
+sentence-transformers
+tree-sitter

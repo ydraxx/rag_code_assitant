@@ -1,6 +1,6 @@
 from typing import List
 from langchain_core.embeddings import Embeddings
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 
 class CustomEmbedding(Embeddings):

@@ -2,6 +2,7 @@ faiss-cpu
 langchain_community
 langchain_core
 langchain_huggingface
+ollama
 sentence-transformers
 streamlit
 tree-sitter

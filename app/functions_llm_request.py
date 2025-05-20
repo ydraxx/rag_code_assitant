@@ -1,27 +1,13 @@
 from langchain_community.vectorstores import FAISS
 from ollama import Client
 
+from config import llm_cfg
 from functions_embeddings import CustomEmbedding
 
 
-def similarity_search(chunk: str, index_path:str, nb_results:int):
-    embedding = CustomEmbedding()
-
-    # Load FAISS vector store
-    index = FAISS.load_local(index_path, embedding, allow_dangerous_deserialization=True)
-    print('FAISS index loaded.')
-
-    # Similarity search
-    results = index.similarity_search(chunk, k=nb_results)
-    print('Similarity search done.')
-
-    for res in results:
-        print(res)
-
-
 class OllamaLLM:
-    def __init__(self, model_name: str = 'llama3'):
-        self.client = Client(host="http://localhost:11434")
+    def __init__(self, model_name: str = llm_cfg['MODEL_NAME']):
+        self.client = Client(host= llm_cfg['HOST'])
         self.model_name = model_name
 
     def generate_answer(self, context: str, query: str):
@@ -59,16 +45,28 @@ class OllamaLLM:
         return response['message']['content']
     
 
-def LLM_request(query: str):
+def similarity_search(query: str, index_path:str, nb_results:int):
+    embedding = CustomEmbedding()
+
+    # Load FAISS vector store
+    index = FAISS.load_local(index_path, embedding, allow_dangerous_deserialization=True)
+    print('FAISS index loaded.')
+
+    # Similarity search
+    results = index.similarity_search(query, k=nb_results)
+    print('Similarity search done.')
+
+    chunks = []
+
+    for res in results:
+        chunks.append(res)
+
+    return chunks
+
+
+def LLM_request(query: str, index_path: str) -> str:
     llm = OllamaLLM()
-    contexte = """
-        int calculate_interest(double amount, double rate) {
-            return amount * rate;
-        }
-        """
-    query = "Que fait cette fonction et dans quel cas est-elle utile ?"
-
-    reponse = llm.generate_answer(context=contexte, query=query)
-    print("Réponse du LLM :\n", reponse)
-
-LLM_request('')
+    context = similarity_search(query=query, index_path=index_path, nb_results=1)
+    response = llm.generate_answer(context=context, query=query)
+    print("Réponse du LLM :\n", response)
+    return response

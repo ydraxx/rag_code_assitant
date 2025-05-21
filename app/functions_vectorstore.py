@@ -6,11 +6,13 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
-from uuid import uuid4
 import numpy as np
 import os
 from os import path
+import re
+from uuid import uuid4
 
+from config import vector_cfg
 from functions_embeddings import CustomEmbedding
 from functions_parsing import parse_cpp_code
 
@@ -30,14 +32,30 @@ def extract_includes_from_ast(root_node, code: str):
     return includes
 
 
+def extract_called_functions(code_chunk: str):
+    """
+    Extracts function/method names being called within a chunk of code.
+    """
+    pattern = r'\b([a-zA-Z_]\w*)\s*\('
+    candidates = re.findall(pattern, code_chunk)
+    keywords = {'if', 'for', 'while', 'switch', 'return', 'sizeof', 'catch', 'throw', 'new', 'delete'}
+    return list(set(c for c in candidates if c not in keywords))
+
+
 def extract_chunks_from_ast(root_node, code: str, file_path: str):
-    
     chunks = []
     includes = extract_includes_from_ast(root_node, code)
 
-    def recurse(node):
+    def recurse(node, current_class=None):
+        if node.type in ['class_specifier', 'struct_specifier']:
+            # Get class name
+            class_name = None
+            for child in node.children:
+                if child.type == 'type_identifier':
+                    class_name = code[child.start_byte:child.end_byte]
+                    break
 
-        if node.type in ['function_definition', 'class_specifier', 'struct_specifier']:
+            # Extract class chunk
             chunk_code = code[node.start_byte:node.end_byte].strip()
             chunks.append(Document(
                 page_content=chunk_code,
@@ -48,11 +66,36 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                     "start_point": node.start_point,
                     "end_point": node.end_point,
                     "includes": includes,
-                    "ast": node.sexp()
+                    "parent_class": None,
+                    "called_functions": extract_called_functions(chunk_code),
+                    "ast": node.sexp(),
                 }
             ))
-        for child in node.children:
-            recurse(child)
+
+            # Recurse into class body with class_name context
+            for child in node.children:
+                recurse(child, current_class=class_name)
+
+        elif node.type == 'function_definition':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": node.type,
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "includes": includes,
+                    "parent_class": current_class,
+                    "called_functions": extract_called_functions(chunk_code),
+                    "ast": node.sexp(),
+                }
+            ))
+
+        else:
+            for child in node.children:
+                recurse(child, current_class)
 
     recurse(root_node)
     return includes, chunks
@@ -167,4 +210,4 @@ def build_vectorstore(folder_path: str, index_path: str, json_file: str):
         print('No new documents to process.')
 
 
-build_vectorstore('../test_vectorstore/test_folder/', '../test_vectorstore/vectorstore', '../test_vectorstore/test.json')
+build_vectorstore(vector_cfg["DOCS_PATH"], vector_cfg["INDEX_PATH"], vector_cfg["JSON_PATH"])

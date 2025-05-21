@@ -1,12 +1,14 @@
 from tree_sitter import Language, Parser
 import os
 
-LIB_PATH = '../build/my-languages.so'
+from config import parser_cfg
+
+LIB_PATH = parser_cfg['BUILD_PATH']
 
 if not os.path.exists(LIB_PATH):
     Language.build_library(
         LIB_PATH,
-        ['../tree-sitter-cpp']
+        [parser_cfg['LIB_PATH']]
     )
 
 CPP_LANGUAGE = Language(LIB_PATH, 'cpp')
@@ -33,7 +35,7 @@ def print_tree(node, indent=0):
 
 
 if __name__ == '__main__':
-    cpp_file_path = '../parsing_tests/finance_pricing_engine.cpp'
+    cpp_file_path = '../test/parsing_tests/finance_pricing_engine.cpp'
     with open(cpp_file_path, 'r') as file:
         cpp_code = file.read()
 

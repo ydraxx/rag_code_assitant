@@ -1,4 +1,6 @@
+from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
+
 from ollama import Client
 
 from config import llm_cfg
@@ -45,9 +47,10 @@ class OllamaLLM:
         return response['message']['content']
     
 
-def similarity_search(query: str, index_path:str, nb_results:int):
-    embedding = CustomEmbedding()
-
+def similarity_search(query: str, index_path:str, embedding ,nb_results:int):
+    """
+    Search similar vector from user query
+    """
     # Load FAISS vector store
     index = FAISS.load_local(index_path, embedding, allow_dangerous_deserialization=True)
     print('FAISS index loaded.')
@@ -56,17 +59,60 @@ def similarity_search(query: str, index_path:str, nb_results:int):
     results = index.similarity_search(query, k=nb_results)
     print('Similarity search done.')
 
-    chunks = []
-
     for res in results:
-        chunks.append(res)
+        chunk = res
 
-    return chunks
+    return chunk
+
+
+def get_all_chunks_from_vectorstore(index_path: str, embedding) -> list:
+    """
+    Returns list of all chunks from vectorstore
+    """
+    vector_store = FAISS.load_local(index_path, embedding, allow_dangerous_deserialization=True)
+    return list(vector_store.docstore._dict.values())
+
+
+def get_related_chunks(target_chunk: list, all_chunks: list) -> list:
+    """
+    Return related chunks based on:
+    - parent class
+    - called functions
+    - same file
+    """
+
+    related_chunks = []
+
+    parent_class = target_chunk.metadata.get("parent_class")
+    called_functions = target_chunk.metadata.get("called_functions", [])
+    file_path = target_chunk.metadata.get("file_path")
+
+    for chunk in all_chunks:
+        # Exclude the target chunk
+        if chunk.metadata.get('hash') == target_chunk.metadata.get('hash'):
+            continue
+
+        same_file = chunk.metadata.get('file_path') == file_path
+        same_class = parent_class and chunk.metadata.get('type') in ['function_definition'] and chunk.metadata.get("parent_class") == parent_class
+        contains_called_func = any(func in chunk.page_content for func in called_functions)
+
+        if same_class or contains_called_func or same_file:
+            related_chunks.append(chunk)
+
+    return related_chunks
 
 
 def LLM_request(query: str, index_path: str) -> str:
-    llm = OllamaLLM()
-    context = similarity_search(query=query, index_path=index_path, nb_results=1)
-    response = llm.generate_answer(context=context, query=query)
-    print("Réponse du LLM :\n", response)
-    return response
+
+    embedding = CustomEmbedding()
+
+    all_chunks = get_all_chunks_from_vectorstore(index_path=index_path, embedding=embedding)
+    chunk = similarity_search(query=query, index_path=index_path, embedding=embedding, nb_results=1)
+
+    context = get_related_chunks(target_chunk=chunk, all_chunks=all_chunks)
+
+    return context
+    # llm = OllamaLLM()
+    # response = llm.generate_answer(context=context, query=chunk)
+    # print("LLM :\n", response)
+    # return response

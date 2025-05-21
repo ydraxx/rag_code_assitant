@@ -18,7 +18,7 @@ ollama pull <model_name>
 
 - Launch the interface
 ```
-streamlit run home.py
+streamlit run app/home.py
 ```
 
 ### Building

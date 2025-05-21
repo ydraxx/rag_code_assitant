@@ -45,5 +45,5 @@ llm_cfg = {
 
 - Build the vectorstore
 ```
-python3 functions_vectorstore.py
+python3 app/functions_vectorstore.py
 ```

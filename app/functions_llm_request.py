@@ -73,33 +73,57 @@ def get_all_chunks_from_vectorstore(index_path: str, embedding) -> list:
     return list(vector_store.docstore._dict.values())
 
 
-def get_related_chunks(target_chunk: list, all_chunks: list) -> list:
+def get_related_chunks(target_chunk: Document, all_chunks: list) -> list:
     """
-    Return related chunks based on:
-    - parent class
-    - called functions
-    - same file
+    Return chunks that help explain the target_chunk, based on:
+    - Definitions of functions used by the target
+    - Same parent class (if applicable)
+    - (Optional) Same file
     """
 
     related_chunks = []
 
+    target_hash = target_chunk.metadata.get("hash")
+    used_functions = target_chunk.metadata.get("used_functions", [])
+    target_defined_functions = target_chunk.metadata.get("defined_functions", [])
     parent_class = target_chunk.metadata.get("parent_class")
-    called_functions = target_chunk.metadata.get("called_functions", [])
     file_path = target_chunk.metadata.get("file_path")
 
     for chunk in all_chunks:
-        # Exclude the target chunk
-        if chunk.metadata.get('hash') == target_chunk.metadata.get('hash'):
+        # Skip self
+        if chunk.metadata.get("hash") == target_hash:
             continue
 
-        same_file = chunk.metadata.get('file_path') == file_path
-        same_class = parent_class and chunk.metadata.get('type') in ['function_definition'] and chunk.metadata.get("parent_class") == parent_class
-        contains_called_func = any(func in chunk.page_content for func in called_functions)
+        chunk_defined_functions = chunk.metadata.get("defined_functions", [])
+        chunk_used_functions = chunk.metadata.get("used_functions", [])
+        chunk_parent_class = chunk.metadata.get("parent_class")
+        chunk_type = chunk.metadata.get("type")
+        chunk_file_path = chunk.metadata.get("file_path")
 
-        if same_class or contains_called_func or same_file:
+        # The chunk defines a function used by the target
+        defines_used_func = any(func in chunk_defined_functions for func in used_functions)
+
+        # The chunk belongs to the same class (if method of a class)
+        same_class = (
+            parent_class and
+            chunk_type == "function_definition" and
+            chunk_parent_class == parent_class
+        )
+
+        # Exclude reverse dependency: chunk uses functions defined in the target
+        uses_target_func = any(func in chunk_used_functions for func in target_defined_functions)
+        if uses_target_func:
+            continue
+
+        # Same file context
+        same_file = chunk_file_path == file_path
+
+        if defines_used_func or same_class or same_file:
             related_chunks.append(chunk)
 
     return related_chunks
+
+
 
 
 def LLM_request(query: str, index_path: str) -> str:

@@ -32,14 +32,41 @@ def extract_includes_from_ast(root_node, code: str):
     return includes
 
 
-def extract_called_functions(code_chunk: str):
+def extract_used_functions(code_chunk: str):
     """
-    Extracts function/method names being called within a chunk of code.
+    Extracts function/method names being used (called) within a chunk of code.
     """
     pattern = r'\b([a-zA-Z_]\w*)\s*\('
     candidates = re.findall(pattern, code_chunk)
     keywords = {'if', 'for', 'while', 'switch', 'return', 'sizeof', 'catch', 'throw', 'new', 'delete'}
     return list(set(c for c in candidates if c not in keywords))
+
+
+def extract_defined_functions(node, code: str):
+    """
+    Extract function names defined by this node.
+    Only applies to function_definition nodes.
+    """
+    defined = []
+    if node.type == 'function_definition':
+        for child in node.children:
+            if child.type == 'function_declarator':
+                for decl_child in child.children:
+                    if decl_child.type == 'identifier':
+                        defined.append(code[decl_child.start_byte:decl_child.end_byte])
+    return defined
+
+
+def extract_defined_fields(node, code: str):
+    """
+    Extracts field (member variable) names defined in a class/struct.
+    """
+    fields = []
+    if node.type == 'field_declaration':
+        for child in node.children:
+            if child.type in ['init_declarator', 'identifier']:
+                fields.append(code[child.start_byte:child.end_byte])
+    return fields
 
 
 def extract_chunks_from_ast(root_node, code: str, file_path: str):
@@ -48,47 +75,53 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
 
     def recurse(node, current_class=None):
         if node.type in ['class_specifier', 'struct_specifier']:
-            # Get class name
             class_name = None
+            defined_fields = []
+
             for child in node.children:
                 if child.type == 'type_identifier':
                     class_name = code[child.start_byte:child.end_byte]
-                    break
+                defined_fields.extend(extract_defined_fields(child, code))
 
-            # Extract class chunk
             chunk_code = code[node.start_byte:node.end_byte].strip()
+
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
                     "file_path": file_path,
                     "type": node.type,
+                    "includes": includes,
+                    "parent_class": None,
+                    "defined_functions": [],
+                    "defined_fields": defined_fields,
+                    "used_functions": extract_used_functions(chunk_code),
                     "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
                     "start_point": node.start_point,
                     "end_point": node.end_point,
-                    "includes": includes,
-                    "parent_class": None,
-                    "called_functions": extract_called_functions(chunk_code),
                     "ast": node.sexp(),
                 }
             ))
 
-            # Recurse into class body with class_name context
             for child in node.children:
                 recurse(child, current_class=class_name)
 
         elif node.type == 'function_definition':
             chunk_code = code[node.start_byte:node.end_byte].strip()
+            defined = extract_defined_functions(node, code)
+            used = extract_used_functions(chunk_code)
+
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
                     "file_path": file_path,
                     "type": node.type,
+                    "includes": includes,
+                    "parent_class": current_class,
+                    "defined_functions": defined,
+                    "used_functions": used,
                     "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
                     "start_point": node.start_point,
                     "end_point": node.end_point,
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "called_functions": extract_called_functions(chunk_code),
                     "ast": node.sexp(),
                 }
             ))

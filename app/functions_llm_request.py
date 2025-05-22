@@ -116,9 +116,9 @@ def get_related_chunks(target_chunk: Document, all_chunks: list) -> list:
             continue
 
         # Same file context
-        same_file = chunk_file_path == file_path
+        # same_file = chunk_file_path == file_path
 
-        if defines_used_func or same_class or same_file:
+        if defines_used_func or same_class:  # or same_file
             related_chunks.append(chunk)
 
     return related_chunks

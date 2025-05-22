@@ -60,6 +60,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
     includes = extract_includes_from_ast(root_node, code)
 
     def recurse(node, current_class=None):
+        
         if node.type in ['class_specifier', 'struct_specifier']:
             class_name = None
             defined_fields = []
@@ -105,6 +106,107 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                     "parent_class": current_class,
                     "defined_functions": defined,
                     "used_functions": used,
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "ast": node.sexp(),
+                }
+            ))
+
+        elif node.type == 'declaration':
+            has_func_decl = any(child.type == 'function_declarator' for child in node.children)
+            if has_func_decl:
+                chunk_code = code[node.start_byte:node.end_byte].strip()
+                used = extract_used_functions(chunk_code)
+                defined = []
+
+                for child in node.children:
+                    if child.type == 'function_declarator':
+                        for decl_child in child.children:
+                            if decl_child.type == 'identifier':
+                                defined.append(code[decl_child.start_byte:decl_child.end_byte])
+
+                chunks.append(Document(
+                    page_content=chunk_code,
+                    metadata={
+                        "file_path": file_path,
+                        "type": "function_declaration",
+                        "includes": includes,
+                        "parent_class": current_class,
+                        "defined_functions": defined,
+                        "used_functions": used,
+                        "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                        "start_point": node.start_point,
+                        "end_point": node.end_point,
+                        "ast": node.sexp(),
+                    }
+            ))
+                
+        elif node.type == 'enum_specifier':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": "enum",
+                    "includes": includes,
+                    "parent_class": current_class,
+                    "defined_functions": [],
+                    "used_functions": [],
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "ast": node.sexp(),
+                }
+            ))
+
+        elif node.type == 'type_definition':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": "typedef",
+                    "includes": includes,
+                    "parent_class": current_class,
+                    "defined_functions": [],
+                    "used_functions": [],
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "ast": node.sexp(),
+                }
+            ))
+
+        elif node.type == 'using_declaration':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": "using",
+                    "includes": includes,
+                    "parent_class": current_class,
+                    "defined_functions": [],
+                    "used_functions": [],
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "ast": node.sexp(),
+                }
+            ))
+
+        elif node.type == 'namespace_definition':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": "namespace",
+                    "includes": includes,
+                    "parent_class": current_class,
+                    "defined_functions": [],
+                    "used_functions": [],
                     "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
                     "start_point": node.start_point,
                     "end_point": node.end_point,

@@ -135,7 +135,7 @@ def LLM_request(query: str, index_path: str) -> str:
 
     context = get_related_chunks(target_chunk=chunk, all_chunks=all_chunks)
 
-    return context
+    return all_chunks
     # llm = OllamaLLM()
     # response = llm.generate_answer(context=context, query=chunk)
     # print("LLM :\n", response)

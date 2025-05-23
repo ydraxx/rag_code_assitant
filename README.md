@@ -34,7 +34,8 @@ vector_cfg = {
 }
 
 parser_cfg = {
-
+    "LIB_PATH": "../tree-sitter-cpp/",
+    "BUILD_PATH": "../build/my-languages.so"
 }
 
 llm_cfg = {

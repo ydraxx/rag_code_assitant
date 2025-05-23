@@ -3,6 +3,26 @@ from langchain_core.documents import Document
 import re
 
 
+def create_chunk(node, code, file_path, includes, current_class, chunk_type, defined=None, used=None, fields=None):
+    chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
+    return Document(
+        page_content=chunk_code,
+        metadata={
+            "file_path": file_path,
+            "type": chunk_type,
+            "includes": includes,
+            "parent_class": current_class,
+            "defined_functions": defined or [],
+            "used_functions": used or [],
+            "defined_fields": fields or [],
+            "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+            "start_point": node.start_point,
+            "end_point": node.end_point,
+            "ast": node.sexp(),
+        }
+    )
+
+
 def extract_includes_from_ast(root_node, code: str):
 
     includes = []
@@ -62,271 +82,76 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
     includes = extract_includes_from_ast(root_node, code)
 
     def recurse(node, current_class=None):
+        node_type = node.type
 
-        if node.type in ['class_specifier', 'struct_specifier']:
+        if node_type in ['class_specifier', 'struct_specifier']:
             class_name = None
             defined_fields = []
 
             for child in node.children:
                 if child.type == 'type_identifier':
-                    class_name = code[child.start_byte:child.end_byte]
+                    class_name = code[child.start_byte:child.end_byte].decode("utf-8", errors="replace")
                 defined_fields.extend(extract_defined_fields(child, code))
 
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": node.type,
-                    "includes": includes,
-                    "parent_class": None,
-                    "defined_functions": [],
-                    "defined_fields": defined_fields,
-                    "used_functions": extract_used_functions(chunk_code),
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
+            chunks.append(create_chunk(
+                node, code, file_path, includes, current_class=None,
+                chunk_type=node_type,
+                fields=defined_fields
             ))
 
             for child in node.children:
                 recurse(child, current_class=class_name)
 
-        elif node.type == 'function_definition':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
+        elif node_type == 'function_definition':
             defined = extract_defined_functions(node, code)
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             used = extract_used_functions(chunk_code)
 
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": node.type,
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "defined_functions": defined,
-                    "used_functions": used,
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
+            chunks.append(create_chunk(
+                node, code, file_path, includes, current_class,
+                chunk_type="function_definition",
+                defined=defined,
+                used=used
             ))
 
-        elif node.type == 'declaration':
+        elif node_type == 'declaration':
             has_func_decl = any(child.type == 'function_declarator' for child in node.children)
             if has_func_decl:
-                chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-                used = extract_used_functions(chunk_code)
                 defined = []
-
                 for child in node.children:
                     if child.type == 'function_declarator':
                         for decl_child in child.children:
                             if decl_child.type == 'identifier':
-                                defined.append(code[decl_child.start_byte:decl_child.end_byte])
+                                defined.append(code[decl_child.start_byte:decl_child.end_byte].decode("utf-8", errors="replace"))
 
-                chunks.append(Document(
-                    page_content=chunk_code,
-                    metadata={
-                        "file_path": file_path,
-                        "type": "function_declaration",
-                        "includes": includes,
-                        "parent_class": current_class,
-                        "defined_functions": defined,
-                        "used_functions": used,
-                        "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                        "start_point": node.start_point,
-                        "end_point": node.end_point,
-                        "ast": node.sexp(),
-                    }
-            ))
-                
-        elif node.type == 'enum_specifier':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "enum",
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "defined_functions": [],
-                    "used_functions": [],
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
+                chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
+                used = extract_used_functions(chunk_code)
 
-        elif node.type == 'type_definition':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "typedef",
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "defined_functions": [],
-                    "used_functions": [],
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
+                chunks.append(create_chunk(
+                    node, code, file_path, includes, current_class,
+                    chunk_type="function_declaration",
+                    defined=defined,
+                    used=used
+                ))
 
-        elif node.type == 'using_declaration':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "using",
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "defined_functions": [],
-                    "used_functions": [],
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
+        elif node_type in ['enum_specifier', 'type_definition', 'using_declaration',
+                        'alias_declaration', 'namespace_definition', 'template_declaration',
+                        'preproc_def', 'preproc_function_def', 'preproc_undef']:
 
-        elif node.type == 'alias_declaration':
+            chunk_type = node.type
             chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "using_alias",
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "defined_functions": [],
-                    "used_functions": [],
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
+            used = extract_used_functions(chunk_code) if node_type == 'template_declaration' else []
 
-        elif node.type == 'namespace_definition':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "namespace",
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "defined_functions": [],
-                    "used_functions": [],
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
-
-        elif node.type == 'template_declaration':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "template_declaration",
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "defined_functions": [],
-                    "used_functions": extract_used_functions(chunk_code),
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
-
-        elif node.type == 'template_declaration':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "template_declaration",
-                    "includes": includes,
-                    "parent_class": current_class,
-                    "defined_functions": [],
-                    "used_functions": extract_used_functions(chunk_code),
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
-
-        elif node.type == 'preproc_def':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "macro_define",
-                    "includes": includes,
-                    "parent_class": None,
-                    "defined_functions": [],
-                    "used_functions": [],
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
-
-        elif node.type == 'preproc_function_def':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "macro_function_define",
-                    "includes": includes,
-                    "parent_class": None,
-                    "defined_functions": [],
-                    "used_functions": [],
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
-            ))
-
-        elif node.type == 'preproc_undef':
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            chunks.append(Document(
-                page_content=chunk_code,
-                metadata={
-                    "file_path": file_path,
-                    "type": "macro_undef",
-                    "includes": includes,
-                    "parent_class": None,
-                    "defined_functions": [],
-                    "used_functions": [],
-                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
-                    "start_point": node.start_point,
-                    "end_point": node.end_point,
-                    "ast": node.sexp(),
-                }
+            chunks.append(create_chunk(
+                node, code, file_path, includes, current_class,
+                chunk_type=chunk_type,
+                used=used
             ))
 
         else:
             for child in node.children:
                 recurse(child, current_class)
 
+
     recurse(root_node)
-    return includes, chunks
+    return chunks

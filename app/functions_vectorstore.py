@@ -44,7 +44,7 @@ def load_splits_doc(folder_path: str):
                 with open(file_path, 'r', encoding=encoding) as f:
                     content = f.read()
                     ast = parse_cpp_code(content)
-                    includes, doc = extract_chunks_from_ast(ast, content, file_path)
+                    doc = extract_chunks_from_ast(ast, content, file_path)
                     splits.extend(doc)
     return splits
 
@@ -123,6 +123,8 @@ def build_vectorstore(folder_path: str, index_path: str, json_file: str):
         print('New embeddings added and index saved.')
     else:
         print('No new documents to process.')
+
+    print(f"Index FAISS size: {vector_store.index.ntotal} vector")
 
 
 build_vectorstore(vector_cfg["DOCS_PATH"], vector_cfg["INDEX_PATH"], vector_cfg["JSON_PATH"])

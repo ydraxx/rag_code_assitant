@@ -56,6 +56,8 @@ def extract_defined_fields(node, code: str):
 
 
 def extract_chunks_from_ast(root_node, code: str, file_path: str):
+
+    code = code.encode("utf-8")
     chunks = []
     includes = extract_includes_from_ast(root_node, code)
 
@@ -70,7 +72,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                     class_name = code[child.start_byte:child.end_byte]
                 defined_fields.extend(extract_defined_fields(child, code))
 
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
 
             chunks.append(Document(
                 page_content=chunk_code,
@@ -93,7 +95,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                 recurse(child, current_class=class_name)
 
         elif node.type == 'function_definition':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             defined = extract_defined_functions(node, code)
             used = extract_used_functions(chunk_code)
 
@@ -116,7 +118,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
         elif node.type == 'declaration':
             has_func_decl = any(child.type == 'function_declarator' for child in node.children)
             if has_func_decl:
-                chunk_code = code[node.start_byte:node.end_byte].strip()
+                chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
                 used = extract_used_functions(chunk_code)
                 defined = []
 
@@ -143,7 +145,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
                 
         elif node.type == 'enum_specifier':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -161,7 +163,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'type_definition':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -179,7 +181,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'using_declaration':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -197,7 +199,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'alias_declaration':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -215,7 +217,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'namespace_definition':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -233,7 +235,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'template_declaration':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -251,7 +253,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'template_declaration':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -269,7 +271,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'preproc_def':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -287,7 +289,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'preproc_function_def':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={
@@ -305,7 +307,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             ))
 
         elif node.type == 'preproc_undef':
-            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
             chunks.append(Document(
                 page_content=chunk_code,
                 metadata={

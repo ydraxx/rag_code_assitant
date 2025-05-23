@@ -250,6 +250,78 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                 }
             ))
 
+        elif node.type == 'template_declaration':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": "template_declaration",
+                    "includes": includes,
+                    "parent_class": current_class,
+                    "defined_functions": [],
+                    "used_functions": extract_used_functions(chunk_code),
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "ast": node.sexp(),
+                }
+            ))
+
+        elif node.type == 'preproc_def':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": "macro_define",
+                    "includes": includes,
+                    "parent_class": None,
+                    "defined_functions": [],
+                    "used_functions": [],
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "ast": node.sexp(),
+                }
+            ))
+
+        elif node.type == 'preproc_function_def':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": "macro_function_define",
+                    "includes": includes,
+                    "parent_class": None,
+                    "defined_functions": [],
+                    "used_functions": [],
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "ast": node.sexp(),
+                }
+            ))
+
+        elif node.type == 'preproc_undef':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            chunks.append(Document(
+                page_content=chunk_code,
+                metadata={
+                    "file_path": file_path,
+                    "type": "macro_undef",
+                    "includes": includes,
+                    "parent_class": None,
+                    "defined_functions": [],
+                    "used_functions": [],
+                    "hash": hashlib.sha256(chunk_code.encode()).hexdigest(),
+                    "start_point": node.start_point,
+                    "end_point": node.end_point,
+                    "ast": node.sexp(),
+                }
+            ))
+
         else:
             for child in node.children:
                 recurse(child, current_class)

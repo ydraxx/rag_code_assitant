@@ -41,94 +41,82 @@ def node_to_string(node, indent_level=0):
 
 
 def extract_chunks(tu, code: str, file_path: str):
-
-    node = tu.cursor
-    code = code.encode(("utf-8"))
+    code_bytes = code.encode("utf-8")
     chunks = []
-    # includes = [i for i in tu.get_includes()] # TODO : fix includes
-    includes = []
-    current_class = None
+    includes = []  # TODO: gérer les includes si besoin
+    root = tu.cursor
 
-    def visit_and_extract_functions(node, extent_code):
-        defined_functions = []
-        used_functions = []
+    def get_extent_code(extent):
+        return code_bytes[extent.start.offset:extent.end.offset].decode("utf-8", errors="replace")
 
-        def visit(node):
-            if node.kind in [CursorKind.FUNCTION_DECL, CursorKind.CXX_METHOD]:
-                # Vérifiez si la fonction est définie dans le code du chunk (extent)
-                if node.extent.start.offset >= node.extent.start.offset and node.extent.end.offset <= node.extent.end.offset:
-                    defined_functions.append(node.spelling)
+    def extract_defined_and_used_functions(node, extent_code):
+        defined = set()
+        used = set()
 
-            if node.kind == CursorKind.CALL_EXPR:
-                referenced_function = node.referenced
-                if referenced_function and referenced_function.kind in [CursorKind.FUNCTION_DECL, CursorKind.CXX_METHOD]:
-                    if referenced_function.spelling not in defined_functions:
-                        used_functions.append(referenced_function.spelling)
-
-            for child in node.get_children():
+        def visit(n):
+            if n.kind in [CursorKind.FUNCTION_DECL, CursorKind.CXX_METHOD]:
+                defined.add(n.spelling)
+            elif n.kind == CursorKind.CALL_EXPR:
+                if n.referenced and n.referenced.spelling:
+                    used.add(n.referenced.spelling)
+            for child in n.get_children():
                 visit(child)
 
         visit(node)
-        return defined_functions, used_functions
+        return list(defined), list(used - defined)
 
     def recurse(node, current_class=None):
-        if node.kind == CursorKind.CLASS_DECL or node.kind == CursorKind.STRUCT_DECL:
-            class_name = node.spelling
-            fields = [c.spelling for c in node.get_children() if c.kind == CursorKind.FIELD_DECL]
+        kind = node.kind
+        spelling = node.spelling
 
-            extent_code = code[node.extent.start.offset:node.extent.end.offset].decode("utf-8", errors="replace")
-            defined, used = visit_and_extract_functions(node, extent_code)
+        if kind in [CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL] and node.is_definition():
+            extent_code = get_extent_code(node.extent)
+            fields = [c.spelling for c in node.get_children() if c.kind == CursorKind.FIELD_DECL]
+            ast_str = node_to_string(node)
 
             chunks.append(create_chunk_clang(
-                code, file_path, chunk_type="class" if node.kind == CursorKind.CLASS_DECL else "struct",
+                code=code_bytes,
+                file_path=file_path,
+                chunk_type="class" if kind == CursorKind.CLASS_DECL else "struct",
                 extent=node.extent,
                 includes=includes,
                 current_class=None,
                 fields=fields,
-                ast=node_to_string(node)
+                ast=ast_str
             ))
 
-            for child in node.get_children():
-                recurse(child, current_class=class_name)
-
-        elif node.kind == CursorKind.FUNCTION_DECL or node.kind == CursorKind.CXX_METHOD:
-            defined = [node.spelling]
-            extent_code = code[node.extent.start.offset:node.extent.end.offset].decode("utf-8", errors="replace")
-            defined, used = visit_and_extract_functions(node, extent_code)
+        elif kind in [CursorKind.FUNCTION_DECL, CursorKind.CXX_METHOD] and node.is_definition():
+            extent_code = get_extent_code(node.extent)
+            defined, used = extract_defined_and_used_functions(node, extent_code)
+            ast_str = node_to_string(node)
 
             chunks.append(create_chunk_clang(
-                code, file_path, chunk_type="function",
+                code=code_bytes,
+                file_path=file_path,
+                chunk_type="function",
                 extent=node.extent,
                 includes=includes,
                 current_class=current_class,
                 defined=defined,
                 used=used,
-                ast=node_to_string(node)
+                ast=ast_str
             ))
 
-        elif node.kind in {
+        elif kind in {
             CursorKind.NAMESPACE,
             CursorKind.ENUM_DECL,
             CursorKind.TYPEDEF_DECL,
             CursorKind.USING_DECLARATION,
             CursorKind.FUNCTION_TEMPLATE
         }:
-            extent_code = code[node.extent.start.offset:node.extent.end.offset].decode("utf-8", errors="replace")
-            defined, used = visit_and_extract_functions(node, extent_code)
-
-            chunks.append(create_chunk_clang(
-                code, file_path, chunk_type=node.kind.name.lower(),
-                extent=node.extent,
-                includes=includes,
-                current_class=current_class,
-                ast=node_to_string(node)
-            ))
+            # Ces éléments ne sont pas chunkés seuls sauf si hors d’une classe
+            pass
 
         for child in node.get_children():
-            recurse(child, current_class)
+            recurse(child, current_class if kind != CursorKind.CLASS_DECL else spelling)
 
-    recurse(node=node)
-    print(f"Chunks generated for {file_path}, chunks: {len(chunks)}")
+    recurse(root)
+    print(f"Chunks generated for {file_path}: {len(chunks)}")
     return chunks
 
 

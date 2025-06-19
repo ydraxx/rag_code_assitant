@@ -113,14 +113,39 @@ def extract_defined_and_used_functions_regex(code: str):
     return defined, list(set(used) - set(defined))
 
 
+def extract_class_blocks_with_brace_matching(code: str):
+    pattern = re.compile(r'(?:template\s*<[^>]+>\s*)?(class|struct)\s+\w[^{]*{', re.MULTILINE)
+    matches = []
+
+    for match in pattern.finditer(code):
+        start = match.start()
+        brace_pos = code.find('{', match.end() - 1)
+        if brace_pos == -1:
+            continue
+
+        depth = 1
+        pos = brace_pos + 1
+        while pos < len(code) and depth > 0:
+            if code[pos] == '{':
+                depth += 1
+            elif code[pos] == '}':
+                depth -= 1
+            pos += 1
+
+        end = pos
+        class_code = code[start:end]
+        matches.append(class_code)
+
+    return matches
+
+
 def extract_header_chunks(code: str, file_path: str):
     chunks = []
     includes = re.findall(r'#include\s*["<](\w+\.\w+)[">]', code)
 
     # Détection classes/structs
-    class_matches = re.finditer(r'(?:template\s*<[^>]+>\s*)?(class|struct)\s+\w+[^}]*};', code, re.DOTALL)
-    for match in class_matches:
-        class_code = match.group(0)
+    class_blocks = extract_class_blocks_with_brace_matching(code)
+    for class_code in class_blocks:
         defined, used = extract_defined_and_used_functions_regex(class_code)
         chunks.extend(create_chunk(class_code, file_path, "class", includes=includes,
                                    defined=defined, used=used, generator="regex"))

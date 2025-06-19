@@ -107,18 +107,16 @@ def extract_chunks(tu, code: str, file_path: str):
 def extract_defined_and_used_functions_regex(code: str):
     FUNC_REGEX = r'\b(?:inline\s+)?(?:explicit\s+)?(?:[\w:<>]+[\s*&]+)+(\w+)\s*\([^;]*?\)\s*(?:const)?\s*(?:noexcept)?\s*(?:=\s*0)?\s*(?:override)?\s*(?:final)?\s*(?:;|{)?'
     defined = re.findall(FUNC_REGEX, code)
-
-    # Appels de fonction (très large, à affiner si besoin)
     used = re.findall(r'\b(?:\w+::)?(\w+)\s*\(', code)
-
     return defined, list(set(used) - set(defined))
 
 
 def extract_class_blocks_with_brace_matching(code: str):
-    pattern = re.compile(r'(?:template\s*<[^>]+>\s*)?(class|struct)\s+\w[^{]*{', re.MULTILINE)
+    pattern = re.compile(r'(?:template\s*<[^>]+>\s*)?(class|struct)\s+(\w+)[^{]*{', re.MULTILINE)
     matches = []
 
     for match in pattern.finditer(code):
+        class_name = match.group(2)
         start = match.start()
         brace_pos = code.find('{', match.end() - 1)
         if brace_pos == -1:
@@ -135,7 +133,7 @@ def extract_class_blocks_with_brace_matching(code: str):
 
         end = pos
         class_code = code[start:end]
-        matches.append(class_code)
+        matches.append((class_name, class_code))
 
     return matches
 
@@ -144,36 +142,65 @@ def extract_header_chunks(code: str, file_path: str):
     chunks = []
     includes = re.findall(r'#include\s*["<](\w+\.\w+)[">]', code)
 
-    # Détection classes/structs
+    # Traitement des classes / structs
     class_blocks = extract_class_blocks_with_brace_matching(code)
-    for class_code in class_blocks:
+    for class_name, class_code in class_blocks:
+        # Chunk pour la classe elle-même
         defined, used = extract_defined_and_used_functions_regex(class_code)
         chunks.extend(create_chunk(class_code, file_path, "class", includes=includes,
                                    defined=defined, used=used, generator="regex"))
 
-    # Détection enums
+        # Enums dans la classe
+        enum_matches = re.finditer(r'(?:enum(?:\s+class)?\s+\w+\s*[^}]*\{[^}]*\};)', class_code, re.DOTALL)
+        for match in enum_matches:
+            enum_code = match.group(0)
+            chunks.extend(create_chunk(enum_code, file_path, "enum", includes=includes,
+                                       defined=[], used=[], parent_class=class_name, generator="regex"))
+
+        # Typedef / using dans la classe
+        typedef_matches = re.finditer(r'\b(?:typedef\s+.+?;|using\s+\w+\s*=\s*[^;]+;)', class_code)
+        for match in typedef_matches:
+            typedef_code = match.group(0)
+            chunks.extend(create_chunk(typedef_code, file_path, "typedef", includes=includes,
+                                       defined=[], used=[], parent_class=class_name, generator="regex"))
+
+        # Fonctions internes à la classe
+        function_matches = re.finditer(
+            r'(?:inline\s+)?(?:explicit\s+)?(?:[\w:<>]+[\s*&]+)+(\w+)\s*\([^;{]*\)\s*(?:const)?\s*(?:noexcept)?\s*(?:=\s*0)?\s*(?:override)?\s*(?:final)?\s*(?:;|{[^}]*})',
+            class_code)
+        for match in function_matches:
+            func_code = match.group(0)
+            defined, used = extract_defined_and_used_functions_regex(func_code)
+            chunks.extend(create_chunk(func_code, file_path, "function", includes=includes,
+                                       defined=defined, used=used, parent_class=class_name, generator="regex"))
+
+    # Enums globaux (hors classe)
     enum_matches = re.finditer(r'(?:enum(?:\s+class)?\s+\w+\s*[^}]*\{[^}]*\};)', code, re.DOTALL)
     for match in enum_matches:
         enum_code = match.group(0)
-        chunks.extend(create_chunk(enum_code, file_path, "enum", includes=includes,
-                                   defined=[], used=[], generator="regex"))
+        # On évite les doublons d’enum déjà vus dans des classes
+        if not any(enum_code in c["content"] for c in chunks):
+            chunks.extend(create_chunk(enum_code, file_path, "enum", includes=includes,
+                                       defined=[], used=[], generator="regex"))
 
-    # Détection typedef / using
+    # Typedef / using globaux
     typedef_matches = re.finditer(r'\b(?:typedef\s+.+?;|using\s+\w+\s*=\s*[^;]+;)', code)
     for match in typedef_matches:
         typedef_code = match.group(0)
-        chunks.extend(create_chunk(typedef_code, file_path, "typedef", includes=includes,
-                                   defined=[], used=[], generator="regex"))
+        if not any(typedef_code in c["content"] for c in chunks):
+            chunks.extend(create_chunk(typedef_code, file_path, "typedef", includes=includes,
+                                       defined=[], used=[], generator="regex"))
 
-    # Détection fonctions libres (hors classes)
+    # Fonctions libres (hors classes)
     function_matches = re.finditer(
         r'(?:inline\s+)?(?:explicit\s+)?(?:[\w:<>]+[\s*&]+)+(\w+)\s*\([^;{]*\)\s*(?:const)?\s*(?:noexcept)?\s*(?:=\s*0)?\s*(?:override)?\s*(?:final)?\s*(?:;|{[^}]*})',
         code)
     for match in function_matches:
         func_code = match.group(0)
-        defined, used = extract_defined_and_used_functions_regex(func_code)
-        chunks.extend(create_chunk(func_code, file_path, "function", includes=includes,
-                                   defined=defined, used=used, generator="regex"))
+        if not any(func_code in c["content"] for c in chunks):
+            defined, used = extract_defined_and_used_functions_regex(func_code)
+            chunks.extend(create_chunk(func_code, file_path, "function", includes=includes,
+                                       defined=defined, used=used, generator="regex"))
 
     print(f"Chunks generated for {file_path}, chunks: {len(chunks)}")
     return chunks

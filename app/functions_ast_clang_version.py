@@ -104,74 +104,72 @@ def extract_chunks(tu, code: str, file_path: str):
 
 
 def extract_defined_and_used_functions_regex(code: str):
-    FUNC_REGEX = r'\b(?:inline\s+)?(?:explicit\s+)?(?:[\w:<>]+[\s*&]+)+(\w+)\s*\([^;]*?\)\s*(?:const)?\s*(?:noexcept)?\s*(?:=\s*0)?\s*(?:override)?\s*(?:final)?\s*(?:;|{)?'
-    defined = re.findall(FUNC_REGEX, code)
-
-    # Appels de fonction (très large, à affiner si besoin)
+    defined = re.findall(r'\b(?:explicit\s+)?(?:\w+::)?(\w+)\s*\([^)]*\)\s*(?:{[^}]*}|;)', code)
     used = re.findall(r'\b(?:\w+::)?(\w+)\s*\(', code)
-
     return defined, list(set(used) - set(defined))
 
-
-def extract_class_blocks_with_brace_matching(code: str):
-    pattern = re.compile(r'(?:template\s*<[^>]+>\s*)?(class|struct)\s+\w[^{]*{', re.MULTILINE)
-    matches = []
-
-    for match in pattern.finditer(code):
-        start = match.start()
-        brace_pos = code.find('{', match.end() - 1)
-        if brace_pos == -1:
-            continue
-
-        depth = 1
-        pos = brace_pos + 1
-        while pos < len(code) and depth > 0:
-            if code[pos] == '{':
-                depth += 1
-            elif code[pos] == '}':
-                depth -= 1
-            pos += 1
-
-        end = pos
-        class_code = code[start:end]
-        matches.append(class_code)
-
-    return matches
-
+def find_balanced_block(start_index: int, code: str):
+    """Retourne le bloc entre les accolades équilibrées à partir de l'index."""
+    depth = 0
+    end_index = start_index
+    while end_index < len(code):
+        if code[end_index] == '{':
+            depth += 1
+        elif code[end_index] == '}':
+            depth -= 1
+            if depth == 0:
+                return code[start_index:end_index+1]
+        end_index += 1
+    return code[start_index:]  # fallback
 
 def extract_header_chunks(code: str, file_path: str):
     chunks = []
     includes = re.findall(r'#include\s*["<](\w+\.\w+)[">]', code)
 
-    # Détection classes/structs
-    class_blocks = extract_class_blocks_with_brace_matching(code)
-    for class_code in class_blocks:
-        defined, used = extract_defined_and_used_functions_regex(class_code)
-        chunks.extend(create_chunk(class_code, file_path, "class", includes=includes,
-                                   defined=defined, used=used, generator="regex"))
+    def process_class_body(body: str, parent_class: str):
+        """Cherche les éléments dans une classe et les ajoute comme chunks avec parent_class."""
+        # Enums dans une classe
+        for match in re.finditer(r'enum\s+(class\s+)?(\w+)\s*{[^}]*};', body):
+            enum_code = match.group(0)
+            name = match.group(2)
+            chunks.extend(create_chunk(enum_code, file_path, "enum", includes=includes,
+                                       defined=[name], parent_class=parent_class, generator="regex"))
 
-    # Détection enums
-    enum_matches = re.finditer(r'(?:enum(?:\s+class)?\s+\w+\s*[^}]*\{[^}]*\};)', code, re.DOTALL)
-    for match in enum_matches:
+        # Typedefs ou using
+        for match in re.finditer(r'(typedef\s+.*?;|using\s+\w+\s*=\s*.*?;)', body):
+            type_code = match.group(0)
+            name_match = re.search(r'(?:typedef|using)\s+(\w+)', type_code)
+            name = name_match.group(1) if name_match else None
+            chunks.extend(create_chunk(type_code, file_path, "typedef", includes=includes,
+                                       defined=[name] if name else [], parent_class=parent_class, generator="regex"))
+
+        # Fonctions (déclarations ou définitions)
+        for match in re.finditer(r'((?:[\w:<>\s*&]+)\s+(\w+)\s*\([^;{}]*\)\s*(?:const)?\s*[{;])', body):
+            func_code = match.group(1)
+            func_name = match.group(2)
+            defined, used = extract_defined_and_used_functions_regex(func_code)
+            chunks.extend(create_chunk(func_code, file_path, "function", includes=includes,
+                                       defined=defined, used=used, parent_class=parent_class, generator="regex"))
+
+    # Détection des classes/structs
+    class_iter = re.finditer(r'(class|struct)\s+(\w+)[^{;]*{', code)
+    for class_match in class_iter:
+        class_type, class_name = class_match.group(1), class_match.group(2)
+        start = class_match.end() - 1
+        body = find_balanced_block(start, code)
+        full_code = f"{class_type} {class_name} {body};"
+        defined, used = extract_defined_and_used_functions_regex(full_code)
+        chunks.extend(create_chunk(full_code, file_path, "class", includes=includes,
+                                   defined=defined, used=used, parent_class=None, generator="regex"))
+        process_class_body(body, parent_class=class_name)
+
+    # Enums globaux (hors classes)
+    for match in re.finditer(r'enum\s+(class\s+)?(\w+)\s*{[^}]*};', code):
+        if any(c['defined'][0] == match.group(2) for c in chunks if 'defined' in c):
+            continue  # déjà ajouté depuis l'intérieur d'une classe
         enum_code = match.group(0)
+        name = match.group(2)
         chunks.extend(create_chunk(enum_code, file_path, "enum", includes=includes,
-                                   defined=[], used=[], generator="regex"))
-
-    # Détection typedef / using
-    typedef_matches = re.finditer(r'\b(?:typedef\s+.+?;|using\s+\w+\s*=\s*[^;]+;)', code)
-    for match in typedef_matches:
-        typedef_code = match.group(0)
-        chunks.extend(create_chunk(typedef_code, file_path, "typedef", includes=includes,
-                                   defined=[], used=[], generator="regex"))
-
-    # Détection fonctions libres (hors classes)
-    function_matches = re.finditer(
-        r'(?:inline\s+)?(?:explicit\s+)?(?:[\w:<>]+[\s*&]+)+(\w+)\s*\([^;{]*\)\s*(?:const)?\s*(?:noexcept)?\s*(?:=\s*0)?\s*(?:override)?\s*(?:final)?\s*(?:;|{[^}]*})',
-        code)
-    for match in function_matches:
-        func_code = match.group(0)
-        defined, used = extract_defined_and_used_functions_regex(func_code)
-        chunks.extend(create_chunk(func_code, file_path, "function", includes=includes,
-                                   defined=defined, used=used, generator="regex"))
+                                   defined=[name], parent_class=None, generator="regex"))
 
     return chunks

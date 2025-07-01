@@ -8,6 +8,7 @@ from langchain_community.document_loaders import PyMuPDFLoader
 import numpy as np
 import os
 from os import path
+import shutil
 from uuid import uuid4
 
 from config import vector_cfg
@@ -127,4 +128,11 @@ def build_vectorstore(folder_path: str, index_path: str, json_file: str):
     print(f"Index FAISS size: {vector_store.index.ntotal} vector")
 
 
-build_vectorstore(vector_cfg["DOCS_PATH"], vector_cfg["INDEX_PATH"], vector_cfg["JSON_PATH"])
+def new_vector():
+    if os.path.exists(vector_cfg["INDEX_PATH"]) and os.path.exists( vector_cfg["JSON_PATH"]):
+        shutil.rmtree(vector_cfg["INDEX_PATH"])
+        os.remove(vector_cfg["JSON_PATH"])
+
+    build_vectorstore(vector_cfg["DOCS_PATH"], vector_cfg["INDEX_PATH"], vector_cfg["JSON_PATH"])
+
+# new_vector()

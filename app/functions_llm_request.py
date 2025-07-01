@@ -73,57 +73,38 @@ def get_all_chunks_from_vectorstore(index_path: str, embedding) -> list:
     return list(vector_store.docstore._dict.values())
 
 
-def get_related_chunks(target_chunk: Document, all_chunks: list) -> list:
-    """
-    Return chunks that help explain the target_chunk, based on:
-    - Definitions of functions used by the target
-    - Same parent class (if applicable)
-    - (Optional) Same file
-    """
+def find_contextual_chunks(base_chunks, pivot_chunk):
+    metadata = pivot_chunk.metadata
+    file_path = metadata['file_path']
+    used = set(metadata.get('used_functions', []))
+    class_name = metadata.get('class')
+    defined = set(metadata.get('defined_functions', []))
 
-    related_chunks = []
+    context_chunks = []
 
-    target_hash = target_chunk.metadata.get("hash")
-    used_functions = target_chunk.metadata.get("used_functions", [])
-    target_defined_functions = target_chunk.metadata.get("defined_functions", [])
-    parent_class = target_chunk.metadata.get("parent_class")
-    file_path = target_chunk.metadata.get("file_path")
+    # 1. Ajouter la classe parente
+    if class_name:
+        context_chunks += [
+            c for c in base_chunks
+            if c.metadata['type'] == 'class_specifier' and c.metadata['class'] == class_name
+        ]
 
-    for chunk in all_chunks:
-        # Skip self
-        if chunk.metadata.get("hash") == target_hash:
-            continue
+    # 2. Ajouter les fonctions appelées (mais pas définies dans ce chunk)
+    for func in used:
+        context_chunks += [
+            c for c in base_chunks
+            if func in c.metadata.get('defined_functions', []) and c != pivot_chunk
+        ]
 
-        chunk_defined_functions = chunk.metadata.get("defined_functions", [])
-        chunk_used_functions = chunk.metadata.get("used_functions", [])
-        chunk_parent_class = chunk.metadata.get("parent_class")
-        chunk_type = chunk.metadata.get("type")
-        chunk_file_path = chunk.metadata.get("file_path")
+    # 3. Ajouter d’autres fonctions du même fichier
+    context_chunks += [
+        c for c in base_chunks
+        if c.metadata['file_path'] == file_path
+        and c.metadata['type'] in ['function_definition', 'function_declaration']
+        and c != pivot_chunk
+    ]
 
-        # The chunk defines a function used by the target
-        defines_used_func = any(func in chunk_defined_functions for func in used_functions)
-
-        # The chunk belongs to the same class (if method of a class)
-        same_class = (
-            parent_class and
-            chunk_type == "function_definition" and
-            chunk_parent_class == parent_class
-        )
-
-        # Exclude reverse dependency: chunk uses functions defined in the target
-        uses_target_func = any(func in chunk_used_functions for func in target_defined_functions)
-        if uses_target_func:
-            continue
-
-        # Same file context
-        # same_file = chunk_file_path == file_path
-
-        if defines_used_func or same_class:  # or same_file
-            related_chunks.append(chunk)
-
-    return related_chunks
-
-
+    return list(set(context_chunks))  # supprime doublons
 
 
 def LLM_request(query: str, index_path: str) -> str:

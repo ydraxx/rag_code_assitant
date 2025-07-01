@@ -62,6 +62,25 @@ def extract_defined_functions(node, code: str):
     return defined
 
 
+def collect_functions(node, code):
+    defined = []
+    used = []
+
+    def walk(n):
+        if n.type == 'function_definition':
+            fn_names = extract_defined_functions(n, code)
+            fn_code = code[n.start_byte:n.end_byte]
+            fn_used = extract_used_functions(fn_code)
+            defined.extend(fn_names)
+            used.extend(fn_used)
+        for child in n.children:
+            walk(child)
+
+    walk(node)
+    used_clean = list(set(used) - set(defined))
+    return defined, used_clean
+
+
 def extract_chunks_from_ast(root_node, code: str, file_path: str):
     # code = code.encode("utf-8")
     chunks = []
@@ -79,13 +98,15 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                     break
 
             class_stack.append(class_name)
-
             chunk_code = code[node.start_byte:node.end_byte].strip()
             if len(chunk_code.splitlines()) >= 5:
+                defined, used = collect_functions(node, code)
                 chunks.append(create_chunk(
                     node, code, file_path, includes,
                     current_class=class_name,
                     chunk_type=node_type,
+                    defined=defined,
+                    used=used
                 ))
 
             for child in node.children:
@@ -97,7 +118,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             if current_class is None:  # uniquement les fonctions libres
                 defined = extract_defined_functions(node, code)
                 chunk_code = code[node.start_byte:node.end_byte].strip()
-                used = extract_used_functions(chunk_code)
+                used = list(set(extract_used_functions(chunk_code)) - set(defined))
 
                 if len(chunk_code.splitlines()) >= 5:
                     chunks.append(create_chunk(
@@ -106,6 +127,19 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                         defined=defined,
                         used=used
                     ))
+
+        elif node_type == 'namespace_definition':
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            if len(chunk_code.splitlines()) >= 3:
+                current_class = class_stack[-1] if class_stack else None
+                defined, used = collect_functions(node, code)
+                chunks.append(create_chunk(
+                    node, code, file_path, includes, current_class,
+                    chunk_type=node_type,
+                    defined=defined,
+                    used=used
+                ))
+
 
         elif node_type in ['enum_specifier', 'type_definition', 'namespace_definition']:
             chunk_code = code[node.start_byte:node.end_byte].strip()

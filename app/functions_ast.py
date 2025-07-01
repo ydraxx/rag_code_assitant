@@ -4,7 +4,7 @@ import re
 
 
 def create_chunk(node, code, file_path, includes, current_class, chunk_type, defined=None, used=None):
-    chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
+    chunk_code = code.encode("utf-8")[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
     return Document(
         page_content=chunk_code,
         metadata={
@@ -58,12 +58,12 @@ def extract_defined_functions(node, code: str):
             if child.type == 'function_declarator':
                 for decl_child in child.children:
                     if decl_child.type == 'identifier':
-                        defined.append(code[decl_child.start_byte:decl_child.end_byte])
+                        defined.append(code[decl_child.start_byte:decl_child.end_byte].strip())
     return defined
 
 
 def extract_chunks_from_ast(root_node, code: str, file_path: str):
-    code = code.encode("utf-8")
+    # code = code.encode("utf-8")
     chunks = []
     includes = extract_includes_from_ast(root_node, code)
     class_stack = []
@@ -75,12 +75,12 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             class_name = None
             for child in node.children:
                 if child.type == 'type_identifier':
-                    class_name = code[child.start_byte:child.end_byte].decode("utf-8", errors="replace")
+                    class_name = code[child.start_byte:child.end_byte]
                     break
 
             class_stack.append(class_name)
 
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
+            chunk_code = code[node.start_byte:node.end_byte].strip()
             if len(chunk_code.splitlines()) >= 5:
                 chunks.append(create_chunk(
                     node, code, file_path, includes,
@@ -96,7 +96,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
         elif node_type == 'function_definition':
             if current_class is None:  # uniquement les fonctions libres
                 defined = extract_defined_functions(node, code)
-                chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
+                chunk_code = code[node.start_byte:node.end_byte].strip()
                 used = extract_used_functions(chunk_code)
 
                 if len(chunk_code.splitlines()) >= 5:
@@ -107,21 +107,14 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                         used=used
                     ))
 
-        elif node_type in ['enum_specifier', 'type_definition', 'using_declaration',
-                           'alias_declaration', 'namespace_definition', 'template_declaration',
-                           'preproc_def', 'preproc_function_def', 'preproc_undef']:
-
-            chunk_type = node.type
-            chunk_code = code[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            used = extract_used_functions(chunk_code) if node_type == 'template_declaration' else []
-
-            current_class = class_stack[-1] if class_stack else None
-
-            if len(chunk_code.splitlines()) >= 5:
+        elif node_type in ['enum_specifier', 'type_definition', 'namespace_definition']:
+            chunk_code = code[node.start_byte:node.end_byte].strip()
+            if len(chunk_code.splitlines()) >= 3:
+                current_class = class_stack[-1] if class_stack else None
                 chunks.append(create_chunk(
                     node, code, file_path, includes, current_class,
-                    chunk_type=chunk_type,
-                    used=used
+                    chunk_type=node_type,
+                    used=extract_used_functions(chunk_code)
                 ))
 
         for child in node.children:

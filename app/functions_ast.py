@@ -137,7 +137,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                 docs = create_chunk(
                     node, code_bytes, file_path, includes,
                     current_class=class_name,
-                    namespace=namespace_stack[-1] if namespace_stack else None,
+                    namespace="::".join(namespace_stack) if namespace_stack else None,
                     chunk_type=node_type,
                     defined=defined,
                     used=used
@@ -158,7 +158,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                     docs = create_chunk(
                         node, code_bytes, file_path, includes,
                         current_class=None,
-                        namespace=namespace_stack[-1] if namespace_stack else None,
+                        namespace="::".join(namespace_stack) if namespace_stack else None,
                         chunk_type="function_definition",
                         defined=defined,
                         used=used
@@ -172,7 +172,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                 docs = create_chunk(
                     node, code_bytes, file_path, includes,
                     current_class=current_class,
-                    namespace=namespace_stack[-1] if namespace_stack else None,
+                    namespace="::".join(namespace_stack) if namespace_stack else None,
                     chunk_type=node_type,
                     used=extract_used_functions_from_ast(node, code_bytes)
                 )

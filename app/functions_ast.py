@@ -2,7 +2,11 @@ import hashlib
 from langchain_core.documents import Document
 
 
-def split_large_chunk(code_str: str, max_lines: int = 40) -> list:
+def split_large_chunk(code_str: str, max_lines: int = 20) -> list:
+    """
+    Split chunks that are larger than X lines.
+    """
+
     lines = code_str.strip().split('\n')
     if len(lines) <= max_lines:
         return [code_str.strip()]
@@ -12,7 +16,11 @@ def split_large_chunk(code_str: str, max_lines: int = 40) -> list:
     ]
 
 
-def create_chunk(node, code_bytes, file_path, includes, current_class, namespace, chunk_type, defined=None, used=None):
+def create_chunk(node, code_bytes, file_path: str, includes, current_class: str, namespace, chunk_type: str, defined=None, used=None):
+    """
+    Create chunks and set metadata.
+    """
+    
     chunk_code = code_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
     split_chunks = split_large_chunk(chunk_code)
     total = len(split_chunks)
@@ -32,7 +40,7 @@ def create_chunk(node, code_bytes, file_path, includes, current_class, namespace
                 "hash": hashlib.sha256(split_code.encode()).hexdigest(),
                 "start_point": node.start_point,
                 "end_point": node.end_point,
-                "ast": node.sexp(),
+                # "ast": node.sexp(),
                 "chunk_index": i,
                 "split_total": total
             }
@@ -40,13 +48,31 @@ def create_chunk(node, code_bytes, file_path, includes, current_class, namespace
     return documents
 
 
-def extract_includes_from_ast(root_node, code_bytes: bytes):
+def extract_includes(root_node, code_bytes: bytes):
+    """
+    Search includes and extract only the dependency name.
+    """
+
     includes = []
 
     def recurse(node):
         if node.type == 'preproc_include':
-            include_text = code_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
-            includes.append(include_text)
+            # Find the child node that contains the include name
+            found_include = False
+            for child in node.children:
+                if child.type == 'string' or child.type == 'system_lib_string':  # Check for both <...> and "..."
+                    include_name = code_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="replace").strip()
+                    includes.append(include_name)
+                    found_include = True
+                    break 
+            if not found_include:
+                include_text = code_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
+                parts = include_text.split(maxsplit=1)
+                if len(parts) > 1:  
+                    includes.append(parts[1].strip()) 
+                else :
+                    includes.append(include_text)
+
         for child in node.children:
             recurse(child)
 
@@ -55,6 +81,10 @@ def extract_includes_from_ast(root_node, code_bytes: bytes):
 
 
 def extract_defined_functions(node, code_bytes):
+    """
+    Search functions that are defined in the current chunk.
+    """
+
     defined = []
     if node.type == 'function_definition':
         declarator = next((c for c in node.children if c.type == 'function_declarator'), None)
@@ -69,7 +99,11 @@ def extract_defined_functions(node, code_bytes):
     return defined
 
 
-def extract_used_functions_from_ast(node, code_bytes):
+def extract_used_functions(node, code_bytes):
+    """
+    Search which functions are called in the current chunk.
+    """
+
     used = []
 
     def walk(n):
@@ -92,9 +126,9 @@ def collect_functions(node, code_bytes):
     def walk(n):
         if n.type == 'function_definition':
             defined.extend(extract_defined_functions(n, code_bytes))
-            used.extend(extract_used_functions_from_ast(n, code_bytes))
+            used.extend(extract_used_functions(n, code_bytes))
         else:
-            used.extend(extract_used_functions_from_ast(n, code_bytes))
+            used.extend(extract_used_functions(n, code_bytes))
         for child in n.children:
             walk(child)
 
@@ -103,10 +137,14 @@ def collect_functions(node, code_bytes):
     return defined, used_clean
 
 
-def extract_chunks_from_ast(root_node, code: str, file_path: str):
+def extract_chunks(root_node, code: str, file_path: str):
+    """
+    By browsing the AST, search each chunk to create.
+    """
+
     code_bytes = code.encode("utf-8")
     chunks = []
-    includes = extract_includes_from_ast(root_node, code_bytes)
+    includes = extract_includes(root_node, code_bytes)
     class_stack = []
     namespace_stack = []
 
@@ -148,10 +186,9 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
             class_stack.pop()
 
         elif node_type == 'function_definition':
-            # Si elle n’est pas dans une classe, on la chunk séparément
             if current_class is None:
                 defined = extract_defined_functions(node, code_bytes)
-                used = extract_used_functions_from_ast(node, code_bytes)
+                used = extract_used_functions(node, code_bytes)
                 used = list(set(used) - set(defined))
                 chunk_code = code_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace").strip()
                 if len(chunk_code.splitlines()) >= 3:
@@ -174,7 +211,7 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
                     current_class=current_class,
                     namespace="::".join(namespace_stack) if namespace_stack else None,
                     chunk_type=node_type,
-                    used=extract_used_functions_from_ast(node, code_bytes)
+                    used=extract_used_functions(node, code_bytes)
                 )
                 chunks.extend(docs)
 
@@ -183,4 +220,5 @@ def extract_chunks_from_ast(root_node, code: str, file_path: str):
 
     recurse(root_node)
     print(f"Chunks generated for {file_path}, chunks: {len(chunks)}")
+    # print(chunks)
     return chunks

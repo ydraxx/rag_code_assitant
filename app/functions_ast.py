@@ -101,17 +101,31 @@ def extract_defined_functions(node, code_bytes):
 
 def extract_used_functions(node, code_bytes):
     """
-    Search which functions are called in the current chunk.
+    Search which functions are called in the current chunk, including method calls and constructor calls.
     """
-
     used = []
 
     def walk(n):
         if n.type == 'call_expression':
             fn_node = n.child_by_field_name('function')
-            if fn_node and fn_node.type == 'identifier':
-                fn_name = code_bytes[fn_node.start_byte:fn_node.end_byte].decode("utf-8", errors="replace").strip()
-                used.append(fn_name)
+            if fn_node:
+                # Capture a wider range of node types, not just simple identifiers
+                if fn_node.type in (
+                    "identifier",
+                    "scoped_identifier",
+                    "qualified_identifier",
+                    "field_expression",
+                    "template_function",
+                    "template_type",
+                    "operator_name",
+                    "destructor_name",
+                ):
+                    fn_name = code_bytes[fn_node.start_byte:fn_node.end_byte].decode("utf-8", errors="replace").strip()
+                    used.append(fn_name)
+                else:
+                    # fallback: capture anything printable just in case
+                    fn_name = code_bytes[fn_node.start_byte:fn_node.end_byte].decode("utf-8", errors="replace").strip()
+                    used.append(fn_name)
         for child in n.children:
             walk(child)
 
